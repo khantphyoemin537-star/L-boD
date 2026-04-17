@@ -83,30 +83,6 @@ async def check_admin(client, chat_id, user_id):
         return permissions.is_admin
     except: return False
 
-def create_welcome_image(bg_bytes, user_pf_bytes):
-    bg = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
-    bg = ImageOps.fit(bg, (1280, 720), centering=(0.5, 0.5))
-    overlay = Image.new('RGBA', bg.size, (0, 0, 0, 100))
-    bg = Image.alpha_composite(bg, overlay)
-    
-    user_pf = Image.open(io.BytesIO(user_pf_bytes)).convert("RGBA")
-    user_pf = user_pf.resize((300, 300), Image.Resampling.LANCZOS)
-    bg.paste(user_pf, (50, 210), user_pf)
-    
-    draw = ImageDraw.Draw(bg)
-    try:
-        font = ImageFont.truetype("font.ttf", 80)
-        text = "ကြိုဆိုပါတယ် သူငယ်ချင်း"
-    except:
-        font = ImageFont.load_default()
-        text = "Welcome, Friend!" 
-    
-    draw.text((400, 320), text, font=font, fill=(255, 255, 255, 255))
-    img_byte_arr = io.BytesIO()
-    bg.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0)
-    return img_byte_arr.read()
-
 # ==========================================
 # 🛡️ EVENT HANDLERS (SHARED BY BOTH BOTS)
 # ==========================================
@@ -355,7 +331,7 @@ async def bot_bully(event):
             if send_count >= 8: 
                 await asyncio.sleep(1)
                 send_count = 0 
-            else: await asyncio.sleep(0.5) 
+            else: await asyncio.sleep(0.6) 
         except Exception:
             bot_bully_tasks[chat_id] = False
             break
@@ -458,37 +434,6 @@ async def protection_logic(event):
                     except: break
             except: pass
 
-async def sticker_spam_filter(event):
-    client = event.client
-    if not event.sticker or event.is_private: return
-    me = await client.get_me()
-    if event.sender_id == me.id or event.sender_id == OWNER_ID: return
-
-    sender_id = event.sender_id
-    now = datetime.now()
-
-    if sender_id not in sticker_spam_data:
-        sticker_spam_data[sender_id] = {"count": 1, "last_time": now}
-        return
-
-    last_time = sticker_spam_data[sender_id]["last_time"]
-    time_diff = (now - last_time).total_seconds()
-
-    if time_diff <= 2.0: sticker_spam_data[sender_id]["count"] += 1
-    else:
-        sticker_spam_data[sender_id]["count"] = 4
-        sticker_spam_data[sender_id]["last_time"] = now
-        return
-
-    if sticker_spam_data[sender_id]["count"] >= 4:
-        try:
-            sender = await event.get_sender()
-            name = escape_html(sender.first_name)
-            mention = f"<a href='tg://user?id={sender_id}'>{name}</a>"
-            await event.respond(bq(f"{mention} ဟာ stkတွေ အဲ့လို မspamပါနဲ့၊ ပြန်ဖျက်အုံး "), parse_mode='html')
-            sticker_spam_data[sender_id]["count"] = 0 
-        except Exception as e: print(f"Sticker Spam Error: {e}")
-
 # 9. Group Specific Rules (Catcher Bot logic)
 async def group_specific_rules(event):
     client = event.client
@@ -511,16 +456,6 @@ async def group_specific_rules(event):
             try: await event.reply(bq(msg), parse_mode='html', link_preview=False)
             except: pass
 
-# 10. Extras (Play, Send, Show)
-async def play_response(event):
-    if event.is_private: return
-    song_title = event.pattern_match.group(1)
-    if not song_title: return 
-    sender = await event.get_sender()
-    full_name = escape_html(f"{sender.first_name} {sender.last_name or ''}".strip())
-    mention = f"<a href='tg://user?id={event.sender_id}'>{full_name}</a>"
-    response = f"<b>Song Title</b>- {escape_html(song_title)}\n<b>သီချင်းဖွင့်တဲ့သူ</b>- {mention}\nစနားထောင်လို့ရပါပြီ။\nMusic botကို ပိတ်ဖို့လည်း မမေ့ပါနဲ့🤍"
-    await event.respond(bq(response), parse_mode='html')
 
 async def broadcast(event):
     client = event.client
@@ -531,7 +466,7 @@ async def broadcast(event):
     for g in list(groups_col.find()):
         try:
             await client.send_message(g['chat_id'], bq(text), parse_mode='html')
-            success += 1
+            success += 643
         except: pass
     await event.respond(bq(f"ငါ မင်းပို့ခိုင်းတဲ့ Message တွေကို သေချာပို့ပေးလိုက်ပြီ! 📢\nပို့ဆောင်ပြီးစီးသော Group အရေအတွက်: {success}"), parse_mode='html')
 
