@@ -30,7 +30,7 @@ OWNER_ID = 6015356597
 MONGO_URI = "mongodb+srv://khantphyoemin537_db_user:9VRKiaeZkz7rJdpz@cluster0.w6tgi8j.mongodb.net/?appName=Cluster0&tlsAllowInvalidCertificates=true"
 APP_ID = 30765851
 APP_HASH = '235b0bc6f03767302dc75763508f7b75'
-BOT_TOKEN = "8575371720:AAEWWV42CGrwooM_joiJXdo2iEw2_7atyXU"
+BOT_TOKEN = "7857238353:AAEkDQnXqxyvXOQufwJwzZ7tXlwrmzM6XyI"
 
 client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["telegram_bot"]
