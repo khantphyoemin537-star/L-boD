@@ -87,7 +87,7 @@ async def check_admin(client, chat_id, user_id):
 # 🛡️ EVENT HANDLERS (SHARED BY BOTH BOTS)
 # ==========================================
 
-# 1. Welcome & Goodbye
+# 1. Welcome & Goodbye (Text Only Version)
 async def welcome_goodbye(event):
     client = event.client
     chat = await event.get_chat()
@@ -96,34 +96,31 @@ async def welcome_goodbye(event):
     safe_title = escape_html(chat.title)
 
     if event.user_added or event.user_joined:
+        # Bot ကိုယ်တိုင် Group ထဲ အထည့်ခံရရင်
         if bot_me.id in event.user_ids:
             groups_col.update_one({"chat_id": chat.id}, {"$set": {"title": chat.title}}, upsert=True)
             msg1 = f"ဟိတ် OWNER နဲ့ Admins တို့ မင်းတို့ရဲ့ ဒီ {safe_title} ထဲကို ထည့်သုံးပေးလို့ ကျေးဇူးတင်ပါတယ်! အသုံးလိုကောင်းလိုနိုင်တဲ့ command များယူထားမယ်ဆိုရင် {bot_mention} ရဲ့ Creator {owner_tag()} ရဲ့ Dm (သို့မဟုတ်) @Besties_with_BoD ကိုလာရောက်ပါ!!!"
             await client.send_message(chat.id, bq(msg1), parse_mode='html')
+            
             try: members = getattr(chat, 'participants_count', 'Unknown')
             except: members = "Unknown"
+            
             msg2 = f"မင်္ဂလာပါ {safe_title}က သူငယ်ချင်းတို့ မင်းတို့ရဲ့\n{bot_mention}ကို အောက်ပါ Group က ထည့်သုံးထားပါသေးတယ်\n\nGroup Name - {safe_title}\nGroup ID - <code>{chat.id}</code>\nMembers အရေအတွက် - {members}\nBot Creator - {owner_tag()}"
             await client.send_message(SPECIFIC_GROUP, bq(msg2), parse_mode='html')
+        
+        # User အသစ်ဝင်လာရင် (ပုံမပါဘဲ စာပဲပို့မယ်)
         else:
             for uid in event.user_ids:
                 if uid != bot_me.id:
                     try:
                         u = await client.get_entity(uid)
                         u_mention = f"<a href='tg://user?id={u.id}'>{escape_html(u.first_name)}</a>"
-                        target_group_entity = await client.get_entity(SPECIFIC_GROUP)
-                        bg_bytes = await client.download_profile_photo(target_group_entity, file=bytes)
-                        user_pf_bytes = await client.download_profile_photo(u, file=bytes)
-                        
-                        if bg_bytes and user_pf_bytes:
-                            final_img_bytes = await asyncio.get_event_loop().run_in_executor(
-                                None, create_welcome_image, bg_bytes, user_pf_bytes
-                            )
-                            caption_msg = f"ဟိတ် {u_mention} ... {safe_title} ကနေ ကြိုဆိုလိုက်ပါတယ်!!🤍စကားဝင်ပြော၊သီချင်းနားထောင်၊ရည်းစားရှာ အပေါင်းအသင်းရှာ ကြိုက်တာလုပ်!"
-                            await client.send_file(event.chat_id, file=io.BytesIO(final_img_bytes), caption=bq(caption_msg), parse_mode='html', force_document=False)
-                        else:
-                            await client.send_message(event.chat_id, bq(f"ဟိတ် {u_mention} ... {safe_title} ကနေ ကြိုဆိုလိုက်ပါတယ်!!🤍စကားဝင်ပြော၊သီချင်းနားထောင်၊ရည်းစားရှာ အပေါင်းအသင်းရှာ ကြိုက်တာလုပ်!"), parse_mode='html')
-                    except Exception as e: print(f"Welcome Image Error: {e}")
+                        caption_msg = f"ဟိတ် {u_mention} ... {safe_title} ကနေ ကြိုဆိုလိုက်ပါတယ်!!🤍စကားဝင်ပြော၊သီချင်းနားထောင်၊ရည်းစားရှာ အပေါင်းအသင်းရှာ ကြိုက်တာလုပ်!"
+                        await client.send_message(event.chat_id, bq(caption_msg), parse_mode='html')
+                    except Exception as e: 
+                        print(f"Welcome Message Error: {e}")
 
+    # User ထွက်သွားရင်
     elif event.user_left or event.user_kicked:
         try:
             u = await client.get_entity(event.user_id)
