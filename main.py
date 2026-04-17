@@ -476,11 +476,11 @@ async def sticker_spam_filter(event):
 
     if time_diff <= 2.0: sticker_spam_data[sender_id]["count"] += 1
     else:
-        sticker_spam_data[sender_id]["count"] = 1
+        sticker_spam_data[sender_id]["count"] = 4
         sticker_spam_data[sender_id]["last_time"] = now
         return
 
-    if sticker_spam_data[sender_id]["count"] >= 2:
+    if sticker_spam_data[sender_id]["count"] >= 4:
         try:
             sender = await event.get_sender()
             name = escape_html(sender.first_name)
