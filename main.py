@@ -118,7 +118,7 @@ async def register_talker(event):
 async def turn_on_learning(event):
     if not await is_admin(main_bot, event.chat_id, event.sender_id): return
     learning_status[event.chat_id] = True
-    await event.reply(bq("ဟုတ် ငါတို့လည်းပျင်းလို့ စကားဝင်ပြောမယ်ကွာ (စကားမှတ်ခြင်း ဖွင့်ပါပြီ)"), parse_mode='html')
+    await event.reply(bq("ဟုတ် ငါတို့လည်းပျင်းလို့ စကားဝင်ပြောမယ်ကွာ (စကားမှတ်ခြင်း ဖွင့်ပါပြီ၊ ၃၀ စက္ကန့်ခြား တစ်ခါပြောပါမည်)"), parse_mode='html')
 
 @main_bot.on(events.NewMessage(pattern=r'^/foff$'))
 async def turn_off_learning(event):
@@ -137,7 +137,7 @@ async def bot_polite_tag(event):
     try: await event.delete() 
     except: pass
 
-    chat_id = event.chat_id
+    chat_id = event.event.chat_id
     t = await reply.get_sender()
     if not t or t.id == OWNER_ID: return
 
@@ -165,7 +165,7 @@ async def stop_bot_polite_tag(event):
     await event.respond(bq("အိုကေ နားလိုက်ပြီ Chief!"), parse_mode='html')
 
 # ==========================================
-# 🎯 [4] GENERAL WATCHER (Learning, Random Talk, Defense)
+# 🎯 [4] GENERAL WATCHER (Learning, Defense, Filters)
 # ==========================================
 @main_bot.on(events.NewMessage())
 async def general_watcher(event):
@@ -209,18 +209,25 @@ async def general_watcher(event):
         if talker and len(text) > 1: # စာအရမ်းတိုရင် မမှတ်ပါ
             talk_col.insert_one({"text": text, "nickname": talker["nickname"]})
 
-    # --- D. Random Talking System (အမြဲအလုပ်လုပ်မည်) ---
-    # User တွေ စာပို့တိုင်း 10% (1/10) ရာခိုင်နှုန်းနဲ့ ကျပန်းဝင်ပြောမည်
-    if random.randint(1, 10) == 1:
-        saved_talks = list(talk_col.find())
-        if saved_talks:
-            chosen = random.choice(saved_talks)
-            msg_to_send = f"{chosen['text']}\n\nပုံ/{chosen['nickname']}"
-            talk_bot = random.choice(bots)
-            try:
-                # Blockquote မပါဘဲ တိုက်ရိုက်ပို့ခြင်း
-                await talk_bot.send_message(event.chat_id, msg_to_send)
-            except: pass
+# ==========================================
+# 🔄 [TIMER] 30 SEC RANDOM TALK LOOP
+# ==========================================
+async def random_talk_timer():
+    await asyncio.sleep(20) # Bot တွေတက်လာအောင် ခဏစောင့်
+    while True:
+        # Group တိုင်းမှာ ဝင်ပြောဖို့ loop ပတ်မယ် (learning status ဖွင့်ထားတဲ့ chat တွေမှာပဲ ပြောမယ်)
+        for chat_id, active in learning_status.items():
+            if active:
+                try:
+                    saved_talks = list(talk_col.find())
+                    if saved_talks:
+                        chosen = random.choice(saved_talks)
+                        # Nickname အပိုင်းကို blockquote လုပ်လိုက်တာပါ
+                        msg_to_send = f"{chosen['text']}\n\n<blockquote><b>ပုံ/{escape_html(chosen['nickname'])}</b></blockquote>"
+                        talk_bot = random.choice(bots)
+                        await talk_bot.send_message(chat_id, msg_to_send, parse_mode='html')
+                except: pass
+        await asyncio.sleep(30) # ၃၀ စက္ကန့် တိတိခြားမယ်
 
 # ==========================================
 # 🚀 START SYSTEM
@@ -235,6 +242,10 @@ async def start_system():
         bot_ids.append(me.id)
 
     print("✅ BoDx AI Learning & Multi-Bot System Online!")
+    
+    # Timer ကို ဒီနေရာကနေ စတင် Run ပေးမှာပါ
+    asyncio.create_task(random_talk_timer())
+    
     await asyncio.gather(*(bot.run_until_disconnected() for bot in bots))
 
 if __name__ == "__main__":
