@@ -44,6 +44,7 @@ client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["telegram_bot"]
 filters_col = db["filters"] 
 allow_col = db["allowed_users"]
+filters_col = db["custom_filters"]
 
 bots = []
 for i, token in enumerate(TOKENS):
@@ -59,6 +60,51 @@ def bq(text):
 def is_allowed(user_id):
     if user_id == OWNER_ID: return True
     return allow_col.find_one({"user_id": user_id}) is not None
+
+@bot_client.on(events.NewMessage(pattern=r'^[/.]f\s+(.*)'))
+async def add_filter(event):
+    # Admin ဟုတ်မဟုတ် စစ်မယ်
+    if not await check_admin(event.chat_id, event.sender_id): 
+        return
+
+    input_str = event.pattern_match.group(1).split(None, 1)
+    keyword = input_str[0].lower()
+    reply = await event.get_reply_message()
+
+    if reply:
+        media = None
+        m_type = None
+        
+        if reply.sticker:
+            media = reply.media
+            m_type = "sticker"
+        elif reply.photo:
+            media = reply.media
+            m_type = "photo"
+        elif reply.video:
+            media = reply.media
+            m_type = "video"
+        elif reply.text:
+            media = reply.text
+            m_type = "text"
+
+        if media:
+            # chat_id ကို မထည့်ဘဲ Global သိမ်းချင်ရင် chat_id: "global" လို့ ထားနိုင်ပါတယ်
+            # အရင် data တွေပါ သုံးရအောင် chat_id မပါဘဲ keyword နဲ့ပဲ update လုပ်ပါမယ်
+            filters_col.update_one(
+                {"keyword": keyword},
+                {"$set": {"content": media, "type": m_type, "chat_id": "global"}}, 
+                upsert=True
+            )
+            await event.reply(bq(f"အိုကေ! '{keyword}' အတွက် {m_type} filter ကို Group အားလုံးအတွက် မှတ်လိုက်ပြီ ✅"), parse_mode='html')
+    
+    elif len(input_str) > 1:
+        filters_col.update_one(
+            {"keyword": keyword},
+            {"$set": {"content": input_str[1], "type": "text", "chat_id": "global"}}, 
+            upsert=True
+        )
+        await event.reply(bq(f"အိုကေ! '{keyword}' ဆိုရင် '{input_str[1]}' လို့ Group အားလုံးမှာ ပြန်ပေးမယ်။ ✅"), parse_mode='html')
 
 # ==========================================
 # 🛡️ [5] Polite Tag / Compliment - Fixed Multi-Bot Logic
@@ -116,7 +162,7 @@ async def bot_polite_tag(event):
             bot_index = (bot_index + 1) % len(bots)
             
             # Telegram ရဲ့ Group Limit 20 msgs per minute ကို ရှောင်ရန် ၃ စက္ကန့် တိတိခြားသည် (Flood Limit Protection)
-            await asyncio.sleep(2.0) 
+            await asyncio.sleep(1.0) 
 
         except Exception as e:
             # Error တက်ရင် အဲ့ဒီ chat အတွက် process ကို ရပ်မယ်
@@ -134,6 +180,47 @@ async def stop_bot_polite_tag(event):
     except: pass
     bot_compliment_tasks[event.chat_id] = False
     await event.respond(bq("ဆဲလို့ဝပြီမို့ အိပ်ပြီ!"), parse_mode='html')
+
+# 🎯 FILTER WATCHER (အောက်ဆုံးမှာထားပါ)
+@bot_client.on(events.NewMessage())
+async def group_filter_watcher(event):
+    # Private chat ဆိုရင် မလုပ်ဘူး
+    if event.is_private or not event.text: 
+        return
+    
+    me = await bot_client.get_me()
+    if event.sender_id == me.id: 
+        return
+
+    user_msg = event.text.lower().strip()
+    
+    # DB ထဲက ရှိသမျှ filter အကုန်လုံးကို ဆွဲထုတ်မယ် (Group အားလုံးမှာ သုံးနိုင်အောင်)
+    all_filters = filters_col.find() 
+    
+    for item in all_filters:
+        keyword = item["keyword"].lower().strip()
+        
+        is_match = False
+        if user_msg == keyword: 
+            is_match = True
+        elif f" {keyword} " in f" {user_msg} ": 
+            is_match = True
+        elif user_msg.startswith(f"{keyword} "): 
+            is_match = True
+        elif user_msg.endswith(f" {keyword}"): 
+            is_match = True
+
+        if is_match:
+            content = item["content"]
+            m_type = item["type"]
+            try:
+                if m_type == "text":
+                    await event.reply(content)
+                else:
+                    await event.reply(file=content)
+                break # တစ်ခုမိရင် ရပ်မယ်
+            except Exception as e:
+                print(f"Filter Response Error: {e}")
 
 # ==========================================
 # 🚀 START SYSTEM
