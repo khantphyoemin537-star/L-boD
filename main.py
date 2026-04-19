@@ -29,7 +29,6 @@ MONGO_URI = "mongodb+srv://khantphyoemin537_db_user:9VRKiaeZkz7rJdpz@cluster0.w6
 APP_ID = 30765851
 APP_HASH = '235b0bc6f03767302dc75763508f7b75'
 
-# Token ၄ ခု ထည့်သွင်းထားသည်
 TOKENS = [
     "7857238353:AAEkDQnXqxyvXOQufwJwzZ7tXlwrmzM6XyI",
     "8565944163:AAE5tew3A1a6GkOw69vMPYSgV2obyO-wPz4",
@@ -44,27 +43,38 @@ client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["telegram_bot"]
 filters_col = db["filters"] 
 allow_col = db["allowed_users"]
-filters_col = db["custom_filters"]
+custom_filters_col = db["custom_filters"]
 
-bots = []
-for i, token in enumerate(TOKENS):
-    client = TelegramClient(f'session_bot_{i}', APP_ID, APP_HASH)
-    bots.append(client)
+# Bot များကို List အဖြစ် တည်ဆောက်ခြင်း
+bots = [TelegramClient(f'session_bot_{i}', APP_ID, APP_HASH) for i in range(len(TOKENS))]
+
+# Main Bot (ပထမဆုံး Bot) ကို Command တွေ ဖမ်းဖို့ သတ်မှတ်မယ် (၄ ကောင်လုံး ပြိုင်မလုပ်အောင်လို့ပါ)
+main_bot = bots[0]
 
 bot_compliment_tasks = {}
+chat_auto_reply_status = {} # Auto Reply ကို ဖွင့်/ပိတ် မှတ်ထားရန်
 
 def bq(text): 
-    safe_text = escape_html(str(text))
-    return f"<blockquote><b>{safe_text}</b></blockquote>"
+    return f"<blockquote><b>{escape_html(str(text))}</b></blockquote>"
 
 def is_allowed(user_id):
     if user_id == OWNER_ID: return True
     return allow_col.find_one({"user_id": user_id}) is not None
 
-@bot_client.on(events.NewMessage(pattern=r'^[/.]f\s+(.*)'))
+async def is_admin(client, chat_id, user_id):
+    if user_id == OWNER_ID: return True
+    try:
+        participant = await client.get_permissions(chat_id, user_id)
+        return participant.is_admin or participant.is_creator
+    except:
+        return False
+
+# ==========================================
+# 🛡️ [1] ADD FILTER (/f)
+# ==========================================
+@main_bot.on(events.NewMessage(pattern=r'^[/.]f\s+(.*)'))
 async def add_filter(event):
-    # Admin ဟုတ်မဟုတ် စစ်မယ်
-    if not await check_admin(event.chat_id, event.sender_id): 
+    if not await is_admin(main_bot, event.chat_id, event.sender_id): 
         return
 
     input_str = event.pattern_match.group(1).split(None, 1)
@@ -72,84 +82,66 @@ async def add_filter(event):
     reply = await event.get_reply_message()
 
     if reply:
-        media = None
-        m_type = None
-        
-        if reply.sticker:
-            media = reply.media
-            m_type = "sticker"
-        elif reply.photo:
-            media = reply.media
-            m_type = "photo"
-        elif reply.video:
-            media = reply.media
-            m_type = "video"
-        elif reply.text:
-            media = reply.text
-            m_type = "text"
+        media = reply.media if (reply.sticker or reply.photo or reply.video) else reply.text
+        m_type = "sticker" if reply.sticker else "photo" if reply.photo else "video" if reply.video else "text"
 
         if media:
-            # chat_id ကို မထည့်ဘဲ Global သိမ်းချင်ရင် chat_id: "global" လို့ ထားနိုင်ပါတယ်
-            # အရင် data တွေပါ သုံးရအောင် chat_id မပါဘဲ keyword နဲ့ပဲ update လုပ်ပါမယ်
-            filters_col.update_one(
+            custom_filters_col.update_one(
                 {"keyword": keyword},
                 {"$set": {"content": media, "type": m_type, "chat_id": "global"}}, 
                 upsert=True
             )
-            await event.reply(bq(f"အိုကေ! '{keyword}' အတွက် {m_type} filter ကို Group အားလုံးအတွက် မှတ်လိုက်ပြီ ✅"), parse_mode='html')
+            await event.reply(bq(f"အိုကေ! '{keyword}' ကို Filter မှတ်လိုက်ပြီ ✅"), parse_mode='html')
     
     elif len(input_str) > 1:
-        filters_col.update_one(
+        custom_filters_col.update_one(
             {"keyword": keyword},
             {"$set": {"content": input_str[1], "type": "text", "chat_id": "global"}}, 
             upsert=True
         )
-        await event.reply(bq(f"အိုကေ! '{keyword}' ဆိုရင် '{input_str[1]}' လို့ Group အားလုံးမှာ ပြန်ပေးမယ်။ ✅"), parse_mode='html')
+        await event.reply(bq(f"အိုကေ! '{keyword}' ဆိုရင် ပြန်ဖြေဖို့ မှတ်လိုက်ပြီ ✅"), parse_mode='html')
 
 # ==========================================
-# 🛡️ [5] Polite Tag / Compliment - Fixed Multi-Bot Logic
+# 🎛️ [2] FILTER ON/OFF (Admin Only)
 # ==========================================
+@main_bot.on(events.NewMessage(pattern=r'^/fon$'))
+async def turn_on_filter(event):
+    if not await is_admin(main_bot, event.chat_id, event.sender_id): return
+    chat_auto_reply_status[event.chat_id] = True
+    await event.reply(bq("ဟုတ် ငါတို့လည်းပျင်းလို့ စကားဝင်ပြောမယ်ကွာ"), parse_mode='html')
 
+@main_bot.on(events.NewMessage(pattern=r'^/foff$'))
+async def turn_off_filter(event):
+    if not await is_admin(main_bot, event.chat_id, event.sender_id): return
+    chat_auto_reply_status[event.chat_id] = False
+    await event.reply(bq("ငါတို့စကားပြောတော့ဘူး နားပြီ"), parse_mode='html')
+
+# ==========================================
+# 🛡️ [3] MULTI-BOT COMPLIMENT LOOP
+# ==========================================
+@main_bot.on(events.NewMessage(pattern=r'^ချီးမွမ်း(?:@\w+)?$'))
 async def bot_polite_tag(event):
-    # Permission Check
-    if not is_allowed(event.sender_id): 
-        return await event.reply(bq("မင်းမှာ ဒီ Command ကို သုံးပိုင်ခွင့်မရှိဘူး။ သုံးခွင့်နဲ့အသုံးပြုနည်းများအတွက် @Besties_with_BoD ကိုလာပါ"), parse_mode='html')
-    
-    # Reply Check
+    if not is_allowed(event.sender_id): return
     reply = await event.get_reply_message()
-    if not reply: 
-        return await event.respond(bq("ဘယ်သူ့ကို မေတ္တာပို့ ချီးမွမ်းပေးရမလဲ၊ Reply ပြန်လိုက်ပါ"), parse_mode='html')
+    if not reply: return await event.respond(bq("Reply ပြန်လိုက်ပါ"))
 
-    # Command ကို ဖျက်တယ်
     try: await event.delete() 
     except: pass
 
     chat_id = event.chat_id
     t = await reply.get_sender()
-    if not t: return
-
-    target_id = t.id
-    # Creator Protection
-    if target_id == OWNER_ID:
-        await event.respond(bq("ဟိတ်ကောင် Creator ကို tag လို့မရဘူး 🔥"), parse_mode='html')
-        return
+    if not t or t.id == OWNER_ID: return
 
     bot_compliment_tasks[chat_id] = True
-    mention = f"<a href='tg://user?id={target_id}'>{escape_html(t.first_name)}</a>"
-    
-    # DB က စာလုံးတွေကို ယူတယ် (text field)
+    mention = f"<a href='tg://user?id={t.id}'>{escape_html(t.first_name)}</a>"
     words = [w.get("text") for w in filters_col.find() if w.get("text")]
-    if not words: 
-        return await event.respond(bq("DB (filters collection) ထဲမှာ ချီးမွမ်းစကားလုံးတွေ မရှိသေးဘူး"))
+    if not words: words = ["ချစ်တယ်"] # Fallback
 
-    await event.respond(bq(f"{mention} ကို ချီးမွမ်းစကားများ စတင်ပို့ဆောင်ပါပြီ။"), parse_mode='html')
-
-    bot_index = 0 # Bot အလှည့်ကျသုံးဖို့
-
+    bot_index = 0
     while bot_compliment_tasks.get(chat_id):
         try: 
-            # လက်ရှိအလှည့်ကျတဲ့ Bot နဲ့ ပို့မယ်
-            current_bot = bots[bot_index]
+            # Bot ၄ ကောင် တစ်ကောင်ပြီးတစ်ကောင် မြန်မြန်ပို့မယ်
+            current_bot = bots[bot_index % len(bots)]
             if current_bot.is_connected():
                 await current_bot.send_message(
                     chat_id, 
@@ -157,81 +149,58 @@ async def bot_polite_tag(event):
                     reply_to=reply.id, 
                     parse_mode='html'
                 )
-            
-            # Bot အလှည့်ပြောင်းမယ် (0, 1, 2, 3 ပြီးရင် 0 ပြန်စ)
-            bot_index = (bot_index + 1) % len(bots)
-            
-            # Telegram ရဲ့ Group Limit 20 msgs per minute ကို ရှောင်ရန် ၃ စက္ကန့် တိတိခြားသည် (Flood Limit Protection)
-            await asyncio.sleep(1.0) 
-
-        except Exception as e:
-            # Error တက်ရင် အဲ့ဒီ chat အတွက် process ကို ရပ်မယ်
-            bot_compliment_tasks[chat_id] = False
-            logging.error(f"Error in broadcast loop: {e}")
+            bot_index += 1
+            await asyncio.sleep(0.5) # Flood မမိအောင် စက္ကန့်ဝက်ခြားသည်
+        except Exception:
             break
 
-# ==========================================
-# 🛡️ [6] Stop Polite Tag
-# ==========================================
-
+@main_bot.on(events.NewMessage(pattern=r'^ခဏနား(?:@\w+)?$'))
 async def stop_bot_polite_tag(event):
     if not is_allowed(event.sender_id): return
-    try: await event.delete() # Command ကို ဖျက်တယ်
+    try: await event.delete()
     except: pass
     bot_compliment_tasks[event.chat_id] = False
-    await event.respond(bq("ဆဲလို့ဝပြီမို့ အိပ်ပြီ!"), parse_mode='html')
+    await event.respond(bq("အိုကေ နားလိုက်ပြီ Chief!"), parse_mode='html')
 
-# 🎯 FILTER WATCHER (အောက်ဆုံးမှာထားပါ)
-@bot_client.on(events.NewMessage())
+# ==========================================
+# 🎯 [4] NO-REPLY FILTER WATCHER
+# ==========================================
+@main_bot.on(events.NewMessage())
 async def group_filter_watcher(event):
-    # Private chat ဆိုရင် မလုပ်ဘူး
-    if event.is_private or not event.text: 
-        return
+    if event.is_private or not event.text: return
     
-    me = await bot_client.get_me()
-    if event.sender_id == me.id: 
-        return
+    # /fon နဲ့ ဖွင့်ထားမှသာ အလုပ်လုပ်မည်
+    if not chat_auto_reply_status.get(event.chat_id, False): return
 
     user_msg = event.text.lower().strip()
-    
-    # DB ထဲက ရှိသမျှ filter အကုန်လုံးကို ဆွဲထုတ်မယ် (Group အားလုံးမှာ သုံးနိုင်အောင်)
-    all_filters = filters_col.find() 
+    all_filters = custom_filters_col.find() 
     
     for item in all_filters:
         keyword = item["keyword"].lower().strip()
-        
-        is_match = False
-        if user_msg == keyword: 
-            is_match = True
-        elif f" {keyword} " in f" {user_msg} ": 
-            is_match = True
-        elif user_msg.startswith(f"{keyword} "): 
-            is_match = True
-        elif user_msg.endswith(f" {keyword}"): 
-            is_match = True
+        is_match = (user_msg == keyword) or (f" {keyword} " in f" {user_msg} ") or user_msg.startswith(f"{keyword} ") or user_msg.endswith(f" {keyword}")
 
         if is_match:
             content = item["content"]
             m_type = item["type"]
             try:
+                # Random Bot တစ်ကောင်က Reply "မပြန်ဘဲ" တိုက်ရိုက်ဝင်ပို့မယ်
+                sender_bot = random.choice(bots)
                 if m_type == "text":
-                    await event.reply(content)
+                    await sender_bot.send_message(event.chat_id, content) # No reply_to
                 else:
-                    await event.reply(file=content)
-                break # တစ်ခုမိရင် ရပ်မယ်
-            except Exception as e:
-                print(f"Filter Response Error: {e}")
+                    await sender_bot.send_message(event.chat_id, file=content) # No reply_to
+                break
+            except Exception:
+                pass
 
 # ==========================================
 # 🚀 START SYSTEM
 # ==========================================
-
 async def start_system():
     threading.Thread(target=run_flask, daemon=True).start()
 
+    # Bot ၄ ကောင်လုံးကို Start မယ်
     for i, bot in enumerate(bots):
-        bot.add_event_handler(bot_polite_tag, events.NewMessage(pattern=r'^ချီးမွမ်း(?:@\w+)?$'))
-        bot.add_event_handler(stop_bot_polite_tag, events.NewMessage(pattern=r'^ခဏနား(?:@\w+)?$'))
         await bot.start(bot_token=TOKENS[i])
 
     print("✅ BoDx Multi-Bot Stealth System Online with 4 Tokens!")
