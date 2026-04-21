@@ -77,20 +77,34 @@ async def is_admin(client, chat_id, user_id):
 # ==========================================
 @main_bot.on(events.NewMessage(pattern=r'^[/.]f\s+(.*)'))
 async def add_filter(event):
-    if not await is_admin(main_bot, event.chat_id, event.sender_id): return
+    if not is_allowed(event.sender_id): return
     input_str = event.pattern_match.group(1).split(None, 1)
     keyword = input_str[0].lower()
     reply = await event.get_reply_message()
 
     if reply:
-        media = reply.media if (reply.sticker or reply.photo or reply.video) else reply.text
-        m_type = "sticker" if reply.sticker else "photo" if reply.photo else "video" if reply.video else "text"
-        if media:
-            custom_filters_col.update_one({"keyword": keyword}, {"$set": {"content": media, "type": m_type, "chat_id": "global"}}, upsert=True)
-            await event.reply(bq(f"အိုကေ! '{keyword}' ကို Filter မှတ်လိုက်ပြီ ✅"), parse_mode='html')
+        # Sticker, Photo, Video တွေကို စစ်မယ်
+        if reply.media:
+            m_type = "sticker" if reply.sticker else "photo" if reply.photo else "video" if reply.video else "media"
+            # Media object ကို MongoDB မှာ သိမ်းလို့ရအောင် တိုက်ရိုက်ထည့်မယ်
+            # အကယ်၍ error တက်ရင် message reference ကို သုံးရပါမယ်
+            try:
+                db["custom_filters"].update_one(
+                    {"keyword": keyword}, 
+                    {"$set": {"content": reply.media, "type": m_type, "chat_id": "global"}}, 
+                    upsert=True
+                )
+                await event.reply(f"အိုကေ! '{keyword}' ကို {m_type} Filter အဖြစ် မှတ်လိုက်ပြီ ✅")
+            except Exception as e:
+                await event.reply(f"Error: MongoDB က ဒီ Media ကို သိမ်းမရနေဘူး၊စာသားပဲ စမ်းကြည့်ပါ။")
     elif len(input_str) > 1:
-        custom_filters_col.update_one({"keyword": keyword}, {"$set": {"content": input_str[1], "type": "text", "chat_id": "global"}}, upsert=True)
-        await event.reply(bq(f"အိုကေ! '{keyword}' ဆိုရင် ပြန်ဖြေဖို့ မှတ်လိုက်ပြီ ✅"), parse_mode='html')
+        db["custom_filters"].update_one(
+            {"keyword": keyword}, 
+            {"$set": {"content": input_str[1], "type": "text", "chat_id": "global"}}, 
+            upsert=True
+        )
+        await event.reply(f"အိုကေ! '{keyword}' ဆိုရင် ပြန်ဖြေဖို့ မှတ်လိုက်ပြီ ✅")
+
 
 # ==========================================
 # 🎛️ [2] LEARNING & TALKING SETTINGS
@@ -193,21 +207,22 @@ async def general_watcher(event):
         except: pass
         return 
 
-    # --- B. Custom Filter Auto-Reply ---
-    all_filters = custom_filters_col.find() 
-    for item in all_filters:
-        keyword = item["keyword"].lower().strip()
-        user_msg_lower = text.lower()
-        is_match = (user_msg_lower == keyword) or (f" {keyword} " in f" {user_msg_lower} ") or user_msg_lower.startswith(f"{keyword} ") or user_msg_lower.endswith(f" {keyword}")
-        if is_match:
+        # --- Custom Filter System (စာသားရော Media ပါ အလုပ်လုပ်မည့်အပိုင်း) ---
+    all_filters = db["custom_filters"].find()
+    for f in all_filters:
+        if f["keyword"] in text.lower():
             try:
-                sender_bot = random.choice(bots)
-                if item["type"] == "text":
-                    await sender_bot.send_message(chat_id, item["content"]) 
+                # Type ကို ကြည့်ပြီး ခွဲပို့မယ်
+                if f.get("type") == "text":
+                    await event.reply(f["content"])
                 else:
-                    await sender_bot.send_message(chat_id, file=item["content"]) 
-            except: pass
+                    # Sticker, Photo, Video တွေဆိုရင် file= နဲ့ ပို့ရပါတယ်
+                    await event.reply(file=f["content"])
+            except Exception as e:
+                print(f"Filter Send Error: {e}")
             break
+
+    
 
     # --- C. Message Learning ( /fon ထားမှ မှတ်မည် ) ---
     if learning_status.get(chat_id, False):
@@ -220,15 +235,19 @@ async def general_watcher(event):
         message_counts[chat_id] = message_counts.get(chat_id, 0) + 1
         
         # ၁၀ ကြောင်းပြည့်ရင် ဝင်ပြောမယ်
-        if message_counts[chat_id] >= 10:
+                if message_counts[chat_id] >= 10:
             message_counts[chat_id] = 0 # Count ပြန်စမယ်
             saved_talks = list(talk_col.find())
             if saved_talks:
                 chosen = random.choice(saved_talks)
-                msg_to_send = f"{chosen['text']}\n\n<blockquote><b>ပုံ/{escape_html(chosen['nickname'])}</b></blockquote>"
-                talk_bot = random.choice(bots) # Bot ၄ ကောင်ထဲက တစ်ကောင်ကို ကျပန်းရွေးမယ်
+                
+                # ပုံနာမည်နဲ့ formatting အားလုံးကို ဖြုတ်ပြီး text တစ်ခုတည်းကိုပဲ ယူမယ်
+                msg_to_send = chosen['text']
+                
+                talk_bot = random.choice(bots) 
                 try:
-                    await talk_bot.send_message(chat_id, msg_to_send, parse_mode='html')
+                    # parse_mode မလိုတော့တဲ့အတွက် ဖြုတ်ထားပါတယ်
+                    await talk_bot.send_message(chat_id, msg_to_send)
                 except: pass
 
 # ==========================================
