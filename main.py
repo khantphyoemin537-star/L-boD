@@ -173,21 +173,6 @@ async def general_watcher(event):
         except: pass
         return 
 
-        # --- Custom Filter System (စာသားရော Media ပါ အလုပ်လုပ်မည့်အပိုင်း) ---
-    all_filters = db["custom_filters"].find()
-    for f in all_filters:
-        if f["keyword"] in text.lower():
-            try:
-                # Type ကို ကြည့်ပြီး ခွဲပို့မယ်
-                if f.get("type") == "text":
-                    await event.reply(f["content"])
-                else:
-                    # Sticker, Photo, Video တွေဆိုရင် file= နဲ့ ပို့ရပါတယ်
-                    await event.reply(file=f["content"])
-            except Exception as e:
-                print(f"Filter Send Error: {e}")
-            break
-
     
 
     # --- C. Message Learning ( /fon ထားမှ မှတ်မည် ) ---
