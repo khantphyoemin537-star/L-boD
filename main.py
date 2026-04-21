@@ -72,39 +72,6 @@ async def is_admin(client, chat_id, user_id):
     except:
         return False
 
-# ==========================================
-# 🛡️ [1] ADD FILTER (/f)
-# ==========================================
-@main_bot.on(events.NewMessage(pattern=r'^[/.]f\s+(.*)'))
-async def add_filter(event):
-    if not is_allowed(event.sender_id): return
-    input_str = event.pattern_match.group(1).split(None, 1)
-    keyword = input_str[0].lower()
-    reply = await event.get_reply_message()
-
-    if reply:
-        # Sticker, Photo, Video တွေကို စစ်မယ်
-        if reply.media:
-            m_type = "sticker" if reply.sticker else "photo" if reply.photo else "video" if reply.video else "media"
-            # Media object ကို MongoDB မှာ သိမ်းလို့ရအောင် တိုက်ရိုက်ထည့်မယ်
-            # အကယ်၍ error တက်ရင် message reference ကို သုံးရပါမယ်
-            try:
-                db["custom_filters"].update_one(
-                    {"keyword": keyword}, 
-                    {"$set": {"content": reply.media, "type": m_type, "chat_id": "global"}}, 
-                    upsert=True
-                )
-                await event.reply(f"အိုကေ! '{keyword}' ကို {m_type} Filter အဖြစ် မှတ်လိုက်ပြီ ✅")
-            except Exception as e:
-                await event.reply(f"Error: MongoDB က ဒီ Media ကို သိမ်းမရနေဘူး၊စာသားပဲ စမ်းကြည့်ပါ။")
-    elif len(input_str) > 1:
-        db["custom_filters"].update_one(
-            {"keyword": keyword}, 
-            {"$set": {"content": input_str[1], "type": "text", "chat_id": "global"}}, 
-            upsert=True
-        )
-        await event.reply(f"အိုကေ! '{keyword}' ဆိုရင် ပြန်ဖြေဖို့ မှတ်လိုက်ပြီ ✅")
-
 
 # ==========================================
 # 🎛️ [2] LEARNING & TALKING SETTINGS
@@ -118,27 +85,27 @@ async def register_talker(event):
     talker_col.update_one({"user_id": reply.sender_id}, {"$set": {"nickname": nickname}}, upsert=True)
     await event.reply(bq(f"ဒီ User ရဲ့စကားတွေကို '{nickname}' နာမည်နဲ့ မှတ်သားဖို့ စာရင်းသွင်းလိုက်ပါပြီ။"), parse_mode='html')
 # --- Learning Control ---
-@main_bot.on(events.NewMessage(pattern=r'^/fon$'))
+@main_bot.on(events.NewMessage(pattern=r'^လိုက်မှတ်\s+(.*)'))
 async def turn_on_learning(event):
     if not await is_admin(main_bot, event.chat_id, event.sender_id): return
     learning_status[event.chat_id] = True
     await event.reply(bq("Database အတွင်းသို့ စကားများမှတ်သားခြင်း စနစ် ဖွင့်ပါပြီ။"), parse_mode='html')
 
-@main_bot.on(events.NewMessage(pattern=r'^/foff$'))
+@main_bot.on(events.NewMessage(pattern=r'^မမှတ်နဲ့တော့\s+(.*)'))
 async def turn_off_learning(event):
     if not await is_admin(main_bot, event.chat_id, event.sender_id): return
     learning_status[event.chat_id] = False
     await event.reply(bq("စကားများမှတ်သားခြင်း စနစ် ပိတ်ပါပြီ။"), parse_mode='html')
 
 # --- Talking Control ---
-@main_bot.on(events.NewMessage(pattern=r'^/fonn$'))
+@main_bot.on(events.NewMessage(pattern=r'^စကားဝင်ပြော\s+(.*)'))
 async def turn_on_talking(event):
     if not await is_admin(main_bot, event.chat_id, event.sender_id): return
     talking_status[event.chat_id] = True
     message_counts[event.chat_id] = 0 # reset counter
     await event.reply(bq("ဟုတ် ငါတို့လည်းပျင်းလို့ စကားဝင်ပြောမယ်ကွာ "), parse_mode='html')
 
-@main_bot.on(events.NewMessage(pattern=r'^/fonnoff$'))
+@main_bot.on(events.NewMessage(pattern=r'^မပြောနဲ့တော့\s+(.*)'))
 async def turn_off_talking(event):
     if not await is_admin(main_bot, event.chat_id, event.sender_id): return
     talking_status[event.chat_id] = False
@@ -147,7 +114,7 @@ async def turn_off_talking(event):
 # ==========================================
 # 🛡️ [3] MULTI-BOT COMPLIMENT LOOP
 # ==========================================
-@main_bot.on(events.NewMessage(pattern=r'^ချီးမွမ်း(?:@\w+)?$'))
+@main_bot.on(events.NewMessage(pattern=r'^ပစ်သတ်(?:@\w+)?$'))
 async def bot_polite_tag(event):
     if not is_allowed(event.sender_id): return
     reply = await event.get_reply_message()
@@ -173,7 +140,7 @@ async def bot_polite_tag(event):
             await asyncio.sleep(0.5) 
         except: break
 
-@main_bot.on(events.NewMessage(pattern=r'^ခဏနား(?:@\w+)?$'))
+@main_bot.on(events.NewMessage(pattern=r'^အပစ်ရပ်(?:@\w+)?$'))
 async def stop_bot_polite_tag(event):
     if not is_allowed(event.sender_id): return
     try: await event.delete()
