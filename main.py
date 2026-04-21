@@ -117,7 +117,6 @@ async def register_talker(event):
     nickname = event.pattern_match.group(1).strip()
     talker_col.update_one({"user_id": reply.sender_id}, {"$set": {"nickname": nickname}}, upsert=True)
     await event.reply(bq(f"ဒီ User ရဲ့စကားတွေကို '{nickname}' နာမည်နဲ့ မှတ်သားဖို့ စာရင်းသွင်းလိုက်ပါပြီ။"), parse_mode='html')
-
 # --- Learning Control ---
 @main_bot.on(events.NewMessage(pattern=r'^/fon$'))
 async def turn_on_learning(event):
@@ -230,25 +229,18 @@ async def general_watcher(event):
         if talker and len(text) > 1:
             talk_col.insert_one({"text": text, "nickname": talker["nickname"]})
 
-    # --- D. Auto-Talk per 10 Messages ( /fonn ထားမှ ပြောမည် ) ---
-    if talking_status.get(chat_id, False):
-        message_counts[chat_id] = message_counts.get(chat_id, 0) + 1
-        
-        # ၁၀ ကြောင်းပြည့်ရင် ဝင်ပြောမယ်
-                if message_counts[chat_id] >= 10:
-            message_counts[chat_id] = 0 # Count ပြန်စမယ်
-            saved_talks = list(talk_col.find())
-            if saved_talks:
-                chosen = random.choice(saved_talks)
-                
-                # ပုံနာမည်နဲ့ formatting အားလုံးကို ဖြုတ်ပြီး text တစ်ခုတည်းကိုပဲ ယူမယ်
-                msg_to_send = chosen['text']
-                
-                talk_bot = random.choice(bots) 
-                try:
-                    # parse_mode မလိုတော့တဲ့အတွက် ဖြုတ်ထားပါတယ်
-                    await talk_bot.send_message(chat_id, msg_to_send)
-                except: pass
+    # --- D. Random Talking System (စာ ၁၀ စောင်ပြည့်တိုင်းပြောမည်) ---
+    message_counts[chat_id] += 1
+    if message_counts[chat_id] >= 10:
+        message_counts[chat_id] = 0
+        saved_talks = list(talk_col.find())
+        if saved_talks:
+            chosen = random.choice(saved_talks)
+            msg_to_send = chosen['text'] # ပုံနာမည် မပါတော့ပါ
+            talk_bot = random.choice(bots)
+            try:
+                await talk_bot.send_message(chat_id, msg_to_send)
+            except: pass
 
 # ==========================================
 # 🚀 START SYSTEM
