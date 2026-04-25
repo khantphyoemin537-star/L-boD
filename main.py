@@ -143,7 +143,7 @@ async def spawn_waifu(event):
         reply_to=event.id
     )
 # ==========================================
-# 🖤 3. CATCH SYSTEM (Atomic - First Win)
+# 🖤 3. CATCH SYSTEM (Harem ထဲသို့ သိမ်းဆည်းခြင်း)
 # ==========================================
 @bot.on(events.NewMessage(pattern=r'^/catch (.*)'))
 async def catch_waifu(event):
@@ -151,54 +151,51 @@ async def catch_waifu(event):
     
     guess = event.pattern_match.group(1).strip().lower()
     
-    # တစ်ယောက်ပဲ မိအောင် find_one_and_update နဲ့ ပိတ်မယ်
+    # Active ဖြစ်နေတဲ့ spawn ကို ပိတ်မယ်
     spawn_data = spawn_col.find_one_and_update(
         {"chat_id": event.chat_id, "active": True},
         {"$set": {"active": False}}
     )
     
     if not spawn_data:
-        return await event.reply("❌ နောက်ကျသွားပါပြီ! တစ်ယောက်ယောက် ဖမ်းသွားပါပြီ။")
+        return await event.reply("❌ နောက်ကျသွားပါပြီ! သူ ထွက်သွားပါပြီ။")
 
     if guess == spawn_data["name"]:
         target = actress_col.find_one({"base_id": spawn_data["base_id"]})
         card_id = generate_id("CARD")
         
-        # User ရဲ့ Harem ထဲကို Card သွင်းမယ်
+        # ဒေတာသွင်းတဲ့နေရာမှာ 'users' collection ထဲ သေချာသွင်းပါ
         users_col.insert_one({
             "user_id": event.sender_id,
             "card_id": card_id,
             "base_id": target["base_id"],
             "display_name": target["display_name"],
             "rarity": target["rarity"],
-            "message_id": target["message_id"], # Object မဟုတ်တဲ့ ID သီးသန့်ပဲ သိမ်းတာပါ
+            "message_id": target["message_id"], # /fuck နဲ့သိမ်းထားတဲ့ message_id
             "caught_at": datetime.now()
         })
         
-        await event.reply(f"🏆 ဂုဏ်ယူပါတယ်!\n**{target['display_name']}** ({target['rarity']}) ကို ဖမ်းမိသွားပါပြီ။\n🔖 Card ID: `{card_id}`")
+        await event.reply(f"🏆 ဂုဏ်ယူပါတယ်!\n**{target['display_name']}** ကို ဖမ်းမိသွားပါပြီ။\nအခု `/harem` ရိုက်ပြီး ပြန်ကြည့်လို့ရပါပြီ။")
     else:
-        # နာမည်မှားရင် ပြန်ဖမ်းလို့ရအောင် ဖွင့်ပေးမယ်
         spawn_col.update_one({"chat_id": event.chat_id}, {"$set": {"active": True}})
-        await event.reply("❌ နာမည်မှားနေပါတယ်။ ပြန်ကြိုးစားကြည့်ပါ။")
+        await event.reply("❌ နာမည်မှားနေပါတယ်။")
+
 # ==========================================
-# 👑 4. HAREM SYSTEM (Public Pagination)
+# 👑 4. HAREM SYSTEM (စစ်ဆေးပြီးသား Version)
 # ==========================================
 @bot.on(events.NewMessage(pattern=r'^/harem'))
 async def view_harem(event):
-    # Reply ထောက်ထားရင် အဲ့ဒီလူဟာကိုပြမယ်၊ မထောက်ရင် ကိုယ့်ဟာကိုယ်ပြမယ်
+    # Reply ထောက်ထားရင် အဲ့ဒီလူဟာကိုပြမယ်
     user_id = (await event.get_reply_message()).sender_id if event.is_reply else event.sender_id
-    try:
-        user_info = await bot.get_entity(user_id)
-        user_name = user_info.first_name
-    except:
-        user_name = "User"
     
+    # MongoDB မှာ ဒီ user_id နဲ့ data ရှိမရှိ ရှာမယ်
     cards = list(users_col.find({"user_id": user_id}))
+    
     if not cards:
-        return await event.reply(f"🦇 {user_name} မှာ စုဆောင်းထားတာ မရှိသေးဘူး။")
+        return await event.reply("🦇 မင်းရဲ့ Harem ထဲမှာ ဘယ်သူမှ မရှိသေးပါဘူး။ အရင်ဖမ်းပါဦး။")
 
     card = cards[0]
-    caption = (f"🖤 **{user_name}'s Harem** (1/{len(cards)})\n\n"
+    caption = (f"🖤 **Harem Collection** (1/{len(cards)})\n\n"
                f"🎬 Name: **{card['display_name']}**\n"
                f"💎 Rarity: {card['rarity']}\n"
                f"🔖 Card ID: `{card['card_id']}`")
@@ -206,37 +203,8 @@ async def view_harem(event):
     buttons = [[Button.inline("⬅️ Prev", data=f"h_{user_id}_p_0"), 
                 Button.inline("Next ➡️", data=f"h_{user_id}_n_0")]]
     
+    # ပုံကို message_id သုံးပြီး ပြန်ပို့မယ်
     await bot.send_file(event.chat_id, file=card['message_id'], caption=caption, buttons=buttons)
-
-@bot.on(events.CallbackQuery(pattern=re.compile(rb"h_(\d+)_(n|p)_(\d+)")))
-async def harem_nav(event):
-    target_id = int(event.data_match.group(1).decode())
-    action = event.data_match.group(2).decode()
-    idx = int(event.data_match.group(3).decode())
-    
-    cards = list(users_col.find({"user_id": target_id}))
-    if not cards: return
-    
-    # ရှေ့နောက် ရွှေ့တဲ့ logic
-    new_idx = (idx + 1) % len(cards) if action == "n" else (idx - 1) % len(cards)
-    card = cards[new_idx]
-    
-    try:
-        user_info = await bot.get_entity(target_id)
-        user_name = user_info.first_name
-    except:
-        user_name = "User"
-
-    caption = (f"🖤 **{user_name}'s Harem** ({new_idx + 1}/{len(cards)})\n\n"
-               f"🎬 Name: **{card['display_name']}**\n"
-               f"💎 Rarity: {card['rarity']}\n"
-               f"🔖 Card ID: `{card['card_id']}`")
-    
-    buttons = [[Button.inline("⬅️ Prev", data=f"h_{target_id}_p_{new_idx}"), 
-                Button.inline("Next ➡️", data=f"h_{target_id}_n_{new_idx}")]]
-    
-    # Message ကို Edit လုပ်ပြီး ပုံရော စာပါ ပြောင်းမယ်
-    await event.edit(caption, file=card['message_id'], buttons=buttons)
 
 # ==========================================
 # 👑 4. HAREM SYSTEM (Public Pagination)
@@ -318,6 +286,55 @@ async def trade_confirm(event):
     users_col.update_one({"card_id": s_card_id}, {"$set": {"user_id": p_id}})
     users_col.update_one({"card_id": p_card['card_id']}, {"$set": {"user_id": sender_id}})
     await event.edit(f"✅ Trade Success!\n`{s_card_id}` 🔄 `{p_card['card_id']}`")
+# Group အလိုက် message counter ကို သိမ်းဖို့ dictionary
+msg_counters = {}
+
+@bot.on(events.NewMessage)
+async def auto_spawn_handler(event):
+    if event.is_private: return
+    chat_id = event.chat_id
+
+    # စာရိုက်တဲ့သူက Bot ဆိုရင် count မလုပ်ဘူး
+    if event.sender_id == (await bot.get_me()).id:
+        return
+
+    # Counter မရှိသေးရင် တည်ဆောက်မယ်
+    if chat_id not in msg_counters:
+        msg_counters[chat_id] = 0
+    
+    # စာတစ်ကြောင်းတိုးတိုင်း counter တိုးမယ်
+    msg_counters[chat_id] += 1
+
+    # စာ ၁၀ ကြောင်းပြည့်မပြည့် စစ်မယ်
+    if msg_counters[chat_id] >= 10:
+        # Spawn လုပ်ဖို့ ရှိမရှိ စစ်ဆေးခြင်း
+        existing = spawn_col.find_one({"chat_id": chat_id, "active": True})
+        if not existing:
+            # Database ထဲက ကျပန်း တစ်ယောက် ယူမယ်
+            all_data = list(actress_col.find())
+            if all_data:
+                target = random.choice(all_data)
+                
+                # Spawn မှတ်တမ်းသွင်းမယ်
+                spawn_col.update_one(
+                    {"chat_id": chat_id},
+                    {"$set": {
+                        "base_id": target["base_id"], 
+                        "name": target["name"], 
+                        "display_name": target["display_name"], 
+                        "active": True
+                    }},
+                    upsert=True
+                )
+
+                caption = (f"🩸 **A new actress has appeared!**\n\n"
+                           f"Copy to catch:\n`/catch {target['display_name']}`")
+                
+                # ပုံပို့မယ်
+                await bot.send_file(chat_id, file=target['message_id'], caption=caption)
+                
+                # Counter ကို ပြန် reset ချမယ်
+                msg_counters[chat_id] = 0
 
 # ==========================================
 # 🚀 LAUNCH
