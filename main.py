@@ -10,8 +10,8 @@ from pymongo import MongoClient
 # ==========================================
 # ⚙️ CONFIGURATIONS
 # ==========================================
-API_ID = 1234567  # သင့်ရဲ့ API_ID
-API_HASH = "your_api_hash" # သင့်ရဲ့ API_HASH
+API_ID = 37675502  # သင့်ရဲ့ API_ID
+API_HASH = "45955dc059f23ca5bfa3dcaff9c0f032" # သင့်ရဲ့ API_HASH
 BOT_TOKEN = "8738081667:AAGr7HkSxO6nC_QhPJJElKR2VKABTEDfNEo"
 OWNER_ID = 6015356597
 LOG_CHAT_ID = -1003933136412
