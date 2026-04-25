@@ -58,36 +58,49 @@ def get_random_rarity():
     return random.choices(ranks, weights=weights)[0]
 
 # ==========================================
-# 🩸 1. DATABASE ADDING (Owner Only - Log Group)
+# 🩸 1. DATABASE ADDING (Reply Method)
 # ==========================================
-@bot.on(events.NewMessage(chats=LOG_CHAT_ID))
-async def add_to_db(event):
-    if event.sender_id != OWNER_ID or not event.photo:
+@bot.on(events.NewMessage(chats=LOG_CHAT_ID, pattern=r'^/fuck (.*)'))
+async def add_to_db_reply(event):
+    # Owner စစ်ဆေးခြင်း
+    if event.sender_id != OWNER_ID:
         return
+
+    # Reply ထောက်ထားခြင်း ရှိမရှိ စစ်ဆေးခြင်း
+    if not event.is_reply:
+        return await event.reply("⚠️ သိမ်းချင်တဲ့ ပုံကို Reply ထောက်ပြီး `/fuck Name | Rarity` လို့ ရိုက်ပါဗျ။")
+
+    reply_msg = await event.get_reply_message()
     
+    # Reply ထောက်ထားတဲ့ message မှာ ပုံပါမပါ စစ်ဆေးခြင်း
+    if not reply_msg.photo:
+        return await event.reply("❌ ပုံကိုပဲ Reply ထောက်ပေးပါဟ။")
+
     try:
-        text = event.text or ""
-        data = text.split('|')
+        # စာသားခွဲထုတ်ခြင်း (ဥပမာ- Eimi Fukada | Mythic)
+        input_text = event.pattern_match.group(1).strip()
+        data = input_text.split('|')
         name = data[0].strip()
         
-        # Rarity: Manual or Auto
+        # Rarity မပါရင် Auto ရွေးခိုင်းမယ်
         rarity = data[1].strip() if len(data) > 1 else get_random_rarity()
-        
         base_id = generate_id("BASE")
         
+        # DATABASE ထဲသိမ်းမယ် (Object မဟုတ်ဘဲ ID တွေကိုပဲ သိမ်းတာ)
         actress_col.insert_one({
             "base_id": base_id,
             "name": name.lower(),
             "display_name": name,
             "rarity": rarity,
-            "file_id": event.message.media,
+            "message_id": reply_msg.id, # ပုံရဲ့ ID ကိုပဲသိမ်းတယ်
+            "chat_id": event.chat_id,    # ဘယ် Chat ကလဲဆိုတာ သိမ်းတယ်
             "timestamp": datetime.now()
         })
         
-        await event.reply(f"✅ **Added to DB**\n🎬 Name: `{name}`\n💎 Rarity: `{rarity}`\n🔖 Base ID: `{base_id}`")
+        await event.reply(f"✅ **Saved Successfully!**\n🎬 Name: `{name}`\n💎 Rarity: `{rarity}`\n🔖 ID: `{base_id}`\n\n(အခုဆိုရင် Error လုံးဝမတက်တော့ပါဘူးဗျာ)")
+        
     except Exception as e:
-        await event.reply(f"❌ Error: {e}")
-
+        await event.reply(f"❌ Error: `{str(e)}`")
 # ==========================================
 # 🍷 2. SPAWN SYSTEM (/waifu)
 # ==========================================
@@ -95,25 +108,40 @@ async def add_to_db(event):
 async def spawn_waifu(event):
     if event.is_private: return
     
-    # Check if someone is already spawned
+    # လက်ရှိ Chat မှာ ပေါ်နေတာ ရှိမရှိ အရင်စစ်မယ်
     existing = spawn_col.find_one({"chat_id": event.chat_id, "active": True})
     if existing:
         return await event.reply(f"⚠️ `{existing['display_name']}` ပေါ်နေပါသေးတယ်။\nCatch: `/catch {existing['display_name']}`")
 
+    # DB ထဲက ကျပန်း တစ်ယောက်ကို ယူမယ်
     all_data = list(actress_col.find())
-    if not all_data: return await event.reply("Database ထဲမှာ ဘာမှမရှိသေးပါဘူး။")
+    if not all_data: 
+        return await event.reply("Database ထဲမှာ ဘာမှမရှိသေးပါဘူး။ အရင် /fuck နဲ့ သိမ်းပေးပါ။")
     
     target = random.choice(all_data)
+    
+    # Spawn မှတ်တမ်းသွင်းမယ်
     spawn_col.update_one(
         {"chat_id": event.chat_id},
-        {"$set": {"base_id": target["base_id"], "name": target["name"], "display_name": target["display_name"], "active": True}},
+        {"$set": {
+            "base_id": target["base_id"], 
+            "name": target["name"], 
+            "display_name": target["display_name"], 
+            "active": True
+        }},
         upsert=True
     )
 
     caption = (f"🩸 **A new actress has appeared!**\n\n"
                f"Copy to catch:\n`/catch {target['display_name']}`")
-    await bot.send_file(event.chat_id, file=target['file_id'], caption=caption)
-
+    
+    # သိမ်းထားတဲ့ message_id ကို သုံးပြီး Log Chat ဆီကနေ ပုံကို ဆွဲပြမယ်
+    await bot.send_file(
+        event.chat_id, 
+        file=target['message_id'], 
+        caption=caption, 
+        reply_to=event.id
+    )
 # ==========================================
 # 🖤 3. CATCH SYSTEM (Atomic - First Win)
 # ==========================================
@@ -123,7 +151,7 @@ async def catch_waifu(event):
     
     guess = event.pattern_match.group(1).strip().lower()
     
-    # Race condition ကာကွယ်ရန် find_one_and_update သုံးသည်
+    # တစ်ယောက်ပဲ မိအောင် find_one_and_update နဲ့ ပိတ်မယ်
     spawn_data = spawn_col.find_one_and_update(
         {"chat_id": event.chat_id, "active": True},
         {"$set": {"active": False}}
@@ -136,21 +164,79 @@ async def catch_waifu(event):
         target = actress_col.find_one({"base_id": spawn_data["base_id"]})
         card_id = generate_id("CARD")
         
+        # User ရဲ့ Harem ထဲကို Card သွင်းမယ်
         users_col.insert_one({
             "user_id": event.sender_id,
             "card_id": card_id,
             "base_id": target["base_id"],
             "display_name": target["display_name"],
             "rarity": target["rarity"],
-            "file_id": target["file_id"],
+            "message_id": target["message_id"], # Object မဟုတ်တဲ့ ID သီးသန့်ပဲ သိမ်းတာပါ
             "caught_at": datetime.now()
         })
         
-        await event.reply(f"🏆 ဂုဏ်ယူပါတယ်!\n**{target['display_name']}** ({target['rarity']}) ကို ဖမ်းမိသွားပါပြီ။\n🔖 ID: `{card_id}`")
+        await event.reply(f"🏆 ဂုဏ်ယူပါတယ်!\n**{target['display_name']}** ({target['rarity']}) ကို ဖမ်းမိသွားပါပြီ။\n🔖 Card ID: `{card_id}`")
     else:
-        # နာမည်မှားရင် ပြန်ဖွင့်ပေးသည်
+        # နာမည်မှားရင် ပြန်ဖမ်းလို့ရအောင် ဖွင့်ပေးမယ်
         spawn_col.update_one({"chat_id": event.chat_id}, {"$set": {"active": True}})
         await event.reply("❌ နာမည်မှားနေပါတယ်။ ပြန်ကြိုးစားကြည့်ပါ။")
+# ==========================================
+# 👑 4. HAREM SYSTEM (Public Pagination)
+# ==========================================
+@bot.on(events.NewMessage(pattern=r'^/harem'))
+async def view_harem(event):
+    # Reply ထောက်ထားရင် အဲ့ဒီလူဟာကိုပြမယ်၊ မထောက်ရင် ကိုယ့်ဟာကိုယ်ပြမယ်
+    user_id = (await event.get_reply_message()).sender_id if event.is_reply else event.sender_id
+    try:
+        user_info = await bot.get_entity(user_id)
+        user_name = user_info.first_name
+    except:
+        user_name = "User"
+    
+    cards = list(users_col.find({"user_id": user_id}))
+    if not cards:
+        return await event.reply(f"🦇 {user_name} မှာ စုဆောင်းထားတာ မရှိသေးဘူး။")
+
+    card = cards[0]
+    caption = (f"🖤 **{user_name}'s Harem** (1/{len(cards)})\n\n"
+               f"🎬 Name: **{card['display_name']}**\n"
+               f"💎 Rarity: {card['rarity']}\n"
+               f"🔖 Card ID: `{card['card_id']}`")
+    
+    buttons = [[Button.inline("⬅️ Prev", data=f"h_{user_id}_p_0"), 
+                Button.inline("Next ➡️", data=f"h_{user_id}_n_0")]]
+    
+    await bot.send_file(event.chat_id, file=card['message_id'], caption=caption, buttons=buttons)
+
+@bot.on(events.CallbackQuery(pattern=re.compile(rb"h_(\d+)_(n|p)_(\d+)")))
+async def harem_nav(event):
+    target_id = int(event.data_match.group(1).decode())
+    action = event.data_match.group(2).decode()
+    idx = int(event.data_match.group(3).decode())
+    
+    cards = list(users_col.find({"user_id": target_id}))
+    if not cards: return
+    
+    # ရှေ့နောက် ရွှေ့တဲ့ logic
+    new_idx = (idx + 1) % len(cards) if action == "n" else (idx - 1) % len(cards)
+    card = cards[new_idx]
+    
+    try:
+        user_info = await bot.get_entity(target_id)
+        user_name = user_info.first_name
+    except:
+        user_name = "User"
+
+    caption = (f"🖤 **{user_name}'s Harem** ({new_idx + 1}/{len(cards)})\n\n"
+               f"🎬 Name: **{card['display_name']}**\n"
+               f"💎 Rarity: {card['rarity']}\n"
+               f"🔖 Card ID: `{card['card_id']}`")
+    
+    buttons = [[Button.inline("⬅️ Prev", data=f"h_{target_id}_p_{new_idx}"), 
+                Button.inline("Next ➡️", data=f"h_{target_id}_n_{new_idx}")]]
+    
+    # Message ကို Edit လုပ်ပြီး ပုံရော စာပါ ပြောင်းမယ်
+    await event.edit(caption, file=card['message_id'], buttons=buttons)
 
 # ==========================================
 # 👑 4. HAREM SYSTEM (Public Pagination)
