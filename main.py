@@ -80,7 +80,7 @@ async def add_to_db(event):
             "name": name.lower(),
             "display_name": name,
             "rarity": rarity,
-            "file_id": event.photo,
+            "file_id": event.message.media,
             "timestamp": datetime.now()
         })
         
