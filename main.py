@@ -24,7 +24,7 @@ def keep_alive(): Thread(target=run).start()
 # ==========================================
 API_ID = 37675502
 API_HASH = "45955dc059f23ca5bfa3dcaff9c0f032"
-BOT_TOKEN = "8738081667:AAGr7HkSxO6nC_QhPJJElKR2VKABTEDfNEo"
+BOT_TOKEN = "87r7HkSxO6nC_QhPJJElKR2VKABTEDfNEo"
 OWNER_ID = 6015356597
 LOG_CHAT_ID = -1003933136412
 
