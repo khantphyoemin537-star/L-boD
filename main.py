@@ -1,5 +1,6 @@
 import asyncio
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from datetime import datetime
 
 # --- Configuration ---
@@ -8,12 +9,14 @@ API_HASH = '0b6330bc916f9e29d6bf302be079e9d6'
 OWNER_ID = 7693106830
 AI_BOT_ID = 8091345445  # @chatgpt_ai_ime_bot
 
-client = TelegramClient('bod_user_session', API_ID, API_HASH)
+# သခင်လေး ပေးထားတဲ့ Session String
+SESSION_STRING = "1BVtsOIMBu2-y9NUI6nGmsWMnRXqYji54DT2OulJwBfV1BwZt8gJcumGqGN6019QzXdNF2lQ1Y-AH-IoSUKUYgcQImS_uQCZwIIDTgQDPyJt-K1-TECl-FtngHpDALvP5v7wZHACXB2MT0e3RsXxp7WUwG-2aeZ47EcqGbWNxIJAMZX0ai_V1KWlxGEy6Zruq5xCTX_33cuATupNCu1jkRn6D43ogdZqOzRp6Vu_PLjHXUdeeloSqX4XL7UkF-LqGyME1xcacPq8IX8SdYjxiPcARvN2ubwwH4PpfZQcf37gUwGq4fP8a8G2Ensn6yjKjqnXSXyEjN2mNVpQ7VYLpww7FURgDCAk="
+
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # --- Data Storage (In-memory) ---
-# တစ်ရက်စာ usage ကို သိမ်းဖို့ (Restart ချရင် reset ဖြစ်ပါမယ်)
-authorized_users = {OWNER_ID} # Owner ကို အမြဲ ခွင့်ပြုထားမယ်
-usage_tracker = {} # {user_id: {'count': 0, 'last_date': 'YYYY-MM-DD'}}
+authorized_users = {OWNER_ID} 
+usage_tracker = {} 
 
 # --- Helper Functions ---
 def get_today():
@@ -27,7 +30,7 @@ def check_usage(user_id):
 
 # --- Handlers ---
 
-# ၁။ ဖြေခွင့်ပေးခြင်း (Reply ထောက်ပြီး "ဖြေခွင့်ပေးတယ်" ဟု ရိုက်ပါ)
+# ၁။ ဖြေခွင့်ပေးခြင်း
 @client.on(events.NewMessage(pattern=r'^ဖြေခွင့်ပေးတယ်$'))
 async def grant_permission(event):
     if event.sender_id != OWNER_ID: return
@@ -41,11 +44,10 @@ async def grant_permission(event):
 @client.on(events.NewMessage(pattern=r'^ဖြေ\s+(.*)'))
 async def ai_proxy(event):
     user_id = event.sender_id
-    today = get_today()
     
     # ခွင့်ပြုချက်ရှိမရှိ စစ်မယ်
     if user_id not in authorized_users:
-        return # ခွင့်ပြုချက်မရှိရင် ဘာမှမလုပ်ဘူး
+        return 
 
     # Usage Limit စစ်မယ် (တစ်ရက် ၃ ကြိမ်)
     count = check_usage(user_id)
@@ -55,13 +57,13 @@ async def ai_proxy(event):
 
     question = event.pattern_match.group(1)
     sender = await event.get_sender()
-    mention = f"[{sender.first_name}](tg://user?id={user_id})"
+    first_name = sender.first_name if sender.first_name else "User"
+    mention = f"[{first_name}](tg://user?id={user_id})"
 
     # AI Bot ဆီကို မေးခွန်း ပို့မယ်
     try:
         async with client.conversation(AI_BOT_ID) as conv:
             await conv.send_message(question)
-            # Bot ဆီက အဖြေကို စောင့်မယ်
             response = await conv.get_response()
             ai_text = response.text
             
@@ -69,7 +71,7 @@ async def ai_proxy(event):
             usage_tracker[user_id]['count'] += 1
             remains = 3 - usage_tracker[user_id]['count']
 
-            # မူလ Group/Chat ထဲမှာ ပြန်ဖြေမယ်
+            # မူလနေရာမှာ ပြန်ဖြေမယ်
             final_msg = (
                 f"ဟိတ် {mention}\n"
                 f"အဖြေကဒီမှာ\n\n"
@@ -82,6 +84,6 @@ async def ai_proxy(event):
     except Exception as e:
         await event.reply("AI Bot ဆီက အဖြေယူရာမှာ အဆင်မပြေဖြစ်သွားပါတယ်။")
 
-print("🦇 BoD AI UserBot is Running...")
+print("🦇 BoD AI UserBot is Running with StringSession...")
 client.start()
 client.run_until_disconnected()
