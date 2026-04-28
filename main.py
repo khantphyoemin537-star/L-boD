@@ -3,8 +3,8 @@ from telethon import TelegramClient, events
 from datetime import datetime
 
 # --- Configuration ---
-APP_ID = 38225985
-APP_HASH = '0b6330bc916f9e29d6bf302be079e9d6'
+API_ID = 38225985
+API_HASH = '0b6330bc916f9e29d6bf302be079e9d6'
 OWNER_ID = 7693106830
 AI_BOT_ID = 8091345445  # @chatgpt_ai_ime_bot
 
